@@ -17,6 +17,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { homedir } from "node:os";
+import { mask as maskSecrets } from "./mask-core.ts";
 
 const CONFIG_PATH = resolve(homedir(), ".pi/agent/secrets.json");
 const MIN_LEN = 4; // 太短的值全局替换会误伤数字/端口等
@@ -26,17 +27,6 @@ const secrets = new Map<string, string>();
 // 真实值 -> NAME
 const names = new Map<string, string>();
 let autoCounter = 0;
-
-// 模式识别: 只覆盖常见前缀, 避免通用高熵检测误伤 UUID/hash
-const patterns = [
-  /\b(sk-[A-Za-z0-9_-]{16,})\b/g,            // OpenAI / Anthropic 风格
-  /\b(ghp_[A-Za-z0-9]{30,})\b/g,             // GitHub PAT
-  /\b(gho_[A-Za-z0-9]{30,})\b/g,
-  /\b(github_pat_[A-Za-z0-9_]{20,})\b/g,
-  /\b(AKIA[0-9A-Z]{16})\b/g,                 // AWS
-  /\b(xox[baprs]-[A-Za-z0-9-]{10,})\b/g,     // Slack
-  /\b(ya29\.[A-Za-z0-9_-]{20,})\b/g,         // Google OAuth
-];
 
 // 解析一行环境变量: export KEY="value" # comment
 function parseEnvLine(line: string): [string, string] | null {
@@ -137,11 +127,9 @@ function redact(text: string): string {
   return out;
 }
 
-// 模式识别: sk-xxx → $API_KEY_N（先做, 新检测到的值会进 secrets, 再被 redact 覆盖也不影响）
+// 模式识别 + 熵兜底 → $NAME (逻辑在 mask-core, 这里只接 nameFor 映射去重)
 function mask(text: string): string {
-  let out = text;
-  for (const re of patterns) out = out.replace(re, (_m, v: string) => `$${nameFor(v)}`);
-  return out;
+  return maskSecrets(text, nameFor);
 }
 
 // $NAME / ${NAME} → 真实值（工具执行前）
@@ -212,12 +200,17 @@ export default function (pi: ExtensionAPI) {
 
   // 3. 工具输出 (含 details): 真实值 → 占位符（兜底）
   pi.on("tool_result", async (event) => {
-    if (secrets.size === 0) return;
+    // 先模式识别+熵检测 (把新暴露的密钥加进 secrets Map), 再强匹配替换成占位符。
+    // 早期版本只跑 redact → 工具输出里首次出现的密钥永远不被脱敏 (真实测试暴露)。
     const content = event.content.map((c) =>
-      c.type === "text" ? { ...c, text: redact(c.text) } : c
+      c.type === "text"
+        ? { ...c, text: redact(maskSecrets(c.text, nameFor)) }
+        : c
     );
     const patch: { content?: typeof content; details?: unknown } = { content };
-    if (event.details) patch.details = redactDeep(event.details);
+    if (event.details) {
+      patch.details = redactDeep(mapStrings(event.details, (s) => maskSecrets(s, nameFor)));
+    }
     return patch;
   });
 

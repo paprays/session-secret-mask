@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Pi extension that masks API keys and secrets in input, tool calls, and tool output using pattern recognition and env file imports.",
   "type": "module",
+  "scripts": {
+    "test": "tsx test/mask.test.ts"
+  },
   "keywords": ["pi-package", "pi-extension", "security", "secrets", "redaction", "privacy"],
   "pi": {
     "extensions": ["./auto-secret-mask.ts"]
@@ -11,7 +14,8 @@
     "@earendil-works/pi-coding-agent": "*"
   },
   "files": [
-    "auto-secret-mask.ts"
+    "auto-secret-mask.ts",
+    "mask-core.ts"
   ],
   "license": "MIT"
 }
