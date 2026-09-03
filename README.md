@@ -7,7 +7,7 @@ A Pi extension that masks API keys and secrets in your session — user input, t
 Two independent masking layers:
 
 1. **Pattern recognition** — detects common secret prefixes (`sk-…`, `ghp_…`, `AKIA…`, Slack `xox…`, Google `ya29…`) and replaces them with `$API_KEY_N` placeholders.
-2. **Strong matching** — loads real values from env files listed in `~/.pi/agent/secrets.json` and replaces any exact occurrence in input / tool output with `[REDACTED: $NAME]`.
+2. **Strong matching** — loads real values from env files listed in `~/.pi/agent/extension-settings/secrets.json` (or fallback `~/.pi/agent/secrets.json`) and replaces any exact occurrence in input / tool output with `[REDACTED: $NAME]`.
 
 Before a tool executes, `$NAME` is substituted back to the real value. The session history only ever stores the placeholder.
 
@@ -19,7 +19,7 @@ pi install git:github.com/paprays/session-secret-mask
 
 ## Configuration
 
-Create `~/.pi/agent/secrets.json`:
+Create `~/.pi/agent/extension-settings/secrets.json`:
 
 ```json
 {

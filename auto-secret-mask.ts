@@ -2,13 +2,13 @@
  * auto-secret-mask — 两种模式:
  *
  * 1. 模式识别: 输入中检测常见前缀 (sk-/ghp_/AKIA...) → 替换为 $API_KEY_N
- * 2. 强匹配:   配置文件 ~/.pi/agent/secrets.json 提供的 { NAME: 值 },
+ * 2. 强匹配:   配置文件 ~/.pi/agent/extension-settings/secrets.json 提供的 { NAME: 值 },
  *              全局精确匹配 (输入/工具输出/文件内容), 替换为
  *              [API_KEY_REDACTED USE_$NAME]
  *
  * 工具执行时 $NAME → 真实值; 会话历史只保留 $NAME / 占位符。
  *
- * 配置文件格式 (~/.pi/agent/secrets.json):
+ * 配置文件格式 (~/.pi/agent/extension-settings/secrets.json):
  *   { "envFiles": ["~/.zshenv", "~/.env"] }                // 全量导入, 自动过滤系统变量
  *   { "envFiles": { "~/.zshenv": ["GH_TOKEN"] } }          // 白名单, 只导入点名变量
  * 解析 KEY=value 行 (支持 export 前缀、引号、# 注释)。
@@ -19,7 +19,9 @@ import { resolve } from "node:path";
 import { homedir } from "node:os";
 import { mask as maskSecrets } from "./mask-core.ts";
 
-const CONFIG_PATH = resolve(homedir(), ".pi/agent/secrets.json");
+// 优先读取 extension-settings 目录，兼容回退根目录
+const PRIMARY_CONFIG_PATH = resolve(homedir(), ".pi/agent/extension-settings/secrets.json");
+const FALLBACK_CONFIG_PATH = resolve(homedir(), ".pi/agent/secrets.json");
 const MIN_LEN = 4; // 太短的值全局替换会误伤数字/端口等
 
 // NAME -> 真实值（配置 + 自动检测合并）
@@ -82,8 +84,13 @@ function parseEnvFile(path: string, wanted: string[] | null): Map<string, string
 
 function loadConfig() {
   try {
-    if (!existsSync(CONFIG_PATH)) return;
-    const raw = JSON.parse(readFileSync(CONFIG_PATH, "utf-8")) as Record<string, unknown>;
+    const configPath = existsSync(PRIMARY_CONFIG_PATH)
+      ? PRIMARY_CONFIG_PATH
+      : existsSync(FALLBACK_CONFIG_PATH)
+        ? FALLBACK_CONFIG_PATH
+        : null;
+    if (!configPath) return;
+    const raw = JSON.parse(readFileSync(configPath, "utf-8")) as Record<string, unknown>;
     const envFiles = raw.envFiles;
     if (Array.isArray(envFiles)) {
       // 全量导入
@@ -103,7 +110,7 @@ function loadConfig() {
       }
     }
   } catch (err) {
-    console.error(`[auto-secret-mask] 读取 ${CONFIG_PATH} 失败: ${String(err)}`);
+    console.error(`[auto-secret-mask] 读取 secrets.json 失败: ${String(err)}`);
   }
 }
 
