@@ -4,7 +4,7 @@
   "description": "Pi extension that masks API keys and secrets in input, tool calls, and tool output using pattern recognition and env file imports.",
   "type": "module",
   "scripts": {
-    "test": "tsx test/mask.test.ts"
+    "test": "tsx test/mask-comprehensive.test.ts"
   },
   "keywords": ["pi-package", "pi-extension", "security", "secrets", "redaction", "privacy"],
   "pi": {

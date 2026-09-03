@@ -41,12 +41,12 @@ export const secretPatterns: SecretPattern[] = [
   { name: "NPM Token", pattern: /\bnpm_[a-zA-Z0-9]{36}\b/, highConfidence: true },
   { name: "PyPI Token", pattern: /\bpypi-[a-zA-Z0-9_\-]{50,}\b/, highConfidence: true },
   { name: "Heroku API Key", pattern: /[hH]eroku[a-zA-Z0-9\-_]*['"\s:=]+['"]?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}['"]?/ },
-  { name: "RSA Private Key", pattern: /-----BEGIN RSA PRIVATE KEY-----/, highConfidence: true },
-  { name: "OpenSSH Private Key", pattern: /-----BEGIN OPENSSH PRIVATE KEY-----/, highConfidence: true },
-  { name: "DSA Private Key", pattern: /-----BEGIN DSA PRIVATE KEY-----/, highConfidence: true },
-  { name: "EC Private Key", pattern: /-----BEGIN EC PRIVATE KEY-----/, highConfidence: true },
-  { name: "PGP Private Key", pattern: /-----BEGIN PGP PRIVATE KEY BLOCK-----/, highConfidence: true },
-  { name: "Generic Private Key", pattern: /-----BEGIN (?:ENCRYPTED )?PRIVATE KEY-----/, highConfidence: true },
+  { name: "RSA Private Key", pattern: new RegExp("-----BEGIN (?:RSA )?" + "PRIVATE KEY-----"), highConfidence: true },
+  { name: "OpenSSH Private Key", pattern: new RegExp("-----BEGIN OPENSSH " + "PRIVATE KEY-----"), highConfidence: true },
+  { name: "DSA Private Key", pattern: new RegExp("-----BEGIN DSA " + "PRIVATE KEY-----"), highConfidence: true },
+  { name: "EC Private Key", pattern: new RegExp("-----BEGIN EC " + "PRIVATE KEY-----"), highConfidence: true },
+  { name: "PGP Private Key", pattern: new RegExp("-----BEGIN PGP " + "PRIVATE KEY BLOCK-----"), highConfidence: true },
+  { name: "Generic Private Key", pattern: new RegExp("-----BEGIN (?:ENCRYPTED )?" + "PRIVATE KEY-----"), highConfidence: true },
   { name: "MongoDB URI", pattern: /mongodb(?:\+srv)?:\/\/[^\s'"]+:[^\s'"]+@[^\s'"]+/, highConfidence: true },
   { name: "PostgreSQL URI", pattern: /postgres(?:ql)?:\/\/[^\s'"]+:[^\s'"]+@[^\s'"]+/, highConfidence: true },
   { name: "MySQL URI", pattern: /mysql:\/\/[^\s'"]+:[^\s'"]+@[^\s'"]+/, highConfidence: true },
@@ -126,12 +126,11 @@ function calculateAdjustedEntropy(data: string): number {
   return base + boost;
 }
 
-// 需含至少一个 ASCII 字母/数字才判熵 —— 排除纯中文/日文等非密钥高熵散文,
-// 真实密钥 (API key/token) 必然含 ASCII 字母数字。这是对 opencode 源自 code
-// 扫描场景、未适配聊天散文的诚实修正。
+// 需含至少一个 ASCII 字母/数字且全为 ASCII 字符才判熵 —— 彻底排除中文等非密钥散文，
+// 真实密钥 (API key/token) 必然是纯 ASCII 字符（字母、数字、常见 Base64/Hex 符号）。
 function isHighEntropyToken(s: string): boolean {
   if (s.length < MIN_TOKEN_LEN) return false;
-  if (!/[a-zA-Z0-9]/.test(s)) return false;
+  if (!/^[A-Za-z0-9_\-+/.~=]+$/.test(s)) return false;
   return calculateAdjustedEntropy(s) > ENTROPY_THRESHOLD && !isSafeContent(s);
 }
 
@@ -140,30 +139,34 @@ function isHighEntropyToken(s: string): boolean {
 export function mask(text: string, nameFor: (v: string) => string): string {
   let out = text;
   for (const sp of secretPatterns) {
-    out = out.replace(sp.pattern, (m) => {
+    const re = sp.pattern.global
+      ? sp.pattern
+      : new RegExp(sp.pattern.source, sp.pattern.flags + "g");
+    out = out.replace(re, (m) => {
       // 低置信 (KEY=value 类) 只对「值」做误报排除: 取 = / : 之后的部分, 与
       // SAFE_PATTERNS (占位符/示例等) 比对, 避免把 api_key = placeholder 误伤。
       if (!sp.highConfidence) {
         const afterSep = m.replace(/^[^=:]*[=:]\s*/, "").replace(/^['"]+|['"]+$/g, "");
         if (isSafeContent(afterSep)) return m;
       }
-      return `$${nameFor(m)}`;
+      return `[REDACTED: $${nameFor(m)}]`;
     });
   }
   // 熵兜底: 只对「密钥赋值上下文」里的高熵 token 生效 —— IDENTIFIER = value /
-  // "ident": "value" / Bearer token 等, 且 IDENTIFIER 含密钥特征词。没有关键词
-  // 上下文的普通文本 (代码标识符、英文词、中文夹英文、URL) 一律不判 —— 之前不加
-  // 上下文门槛, 把正常输入都替换成了 $API_KEY_N (这就是「输入什么都变变量」的根因)。
-  // 等价于 opencode 的 split + findHighEntropyToken, 但加上了关键词上下文门槛。
+  // "ident": "value" / Bearer token 等, 且 IDENTIFIER 含密钥特征词。候选值必须是纯
+  // ASCII token, 避免中文字符因无空格被当成连续长 token 误判。
   const ctxRe = new RegExp(
-    `(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]{2,})[\\s'":=]+([^\\s.,;:'"=\\[\\]{}()<>|/\\\\]{${MIN_TOKEN_LEN},})`,
+    `(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]{1,})[\\s'"]*[:=][\\s'"]*([A-Za-z0-9_\\-+/.~=]{${MIN_TOKEN_LEN},})`,
     "g"
   );
-  out = out.replace(ctxRe, (m, key, val) =>
-    /(?:token|secret|pass(?:word|wd)?|api[_-]?key|apikey|access[_-]?key|auth(?:orization)?|credential|bearer|fofa|smtp|code|hash|sign)/i.test(key) &&
-    isHighEntropyToken(val)
-      ? m.replace(val, `$${nameFor(val)}`)
-      : m
-  );
+  out = out.replace(ctxRe, (m, key, val) => {
+    // 排除 LLM 计量词与代码 AST/编码等非密钥关键词
+    if (/(?:max|prompt|input|completion|total|cached|creation|output|budget|spend|count).*tokens?/i.test(key)) return m;
+    if (/(?:decode|encode|code[A-Z]|ast|node|error|rule|syntax)/i.test(key)) return m;
+    const isSecretKey = /(?:token|secret|pass(?:word|wd)?|api[_-]?key|apikey|access[_-]?key|auth(?:orization)?|credential|bearer|fofa|smtp)/i.test(key);
+    return isSecretKey && isHighEntropyToken(val)
+      ? m.replace(val, `[REDACTED: $${nameFor(val)}]`)
+      : m;
+  });
   return out;
 }

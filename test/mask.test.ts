@@ -46,5 +46,6 @@ assert(mk("11111111-2222-3333-4444-555555555555") === "11111111-2222-3333-4444-5
 assert(mk("your_api_key = placeholder1234567890") === "your_api_key = placeholder1234567890", "占位符");
 assert(mk("今天天气很好我们去公园散步聊天真的很开心") === "今天天气很好我们去公园散步聊天真的很开心", "中文散文");
 assert(mk("你去看看我cpa里nhh的配置，直接用对应的baseurl和apikey去测试") === "你去看看我cpa里nhh的配置，直接用对应的baseurl和apikey去测试", "中英混排无空格");
+assert(mk("还有我的pi插件 auto secret mask我输入什么他都把输入变成变量 hash1 这是测试内容 api key") === "还有我的pi插件 auto secret mask我输入什么他都把输入变成变量 hash1 这是测试内容 api key", "包含secret/hash/key的自然语言聊天不误判");
 
 if (!process.exitCode) console.log("mask-core 冒烟测试全部通过");

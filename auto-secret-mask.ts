@@ -214,14 +214,16 @@ export default function (pi: ExtensionAPI) {
     return patch;
   });
 
-  // 4. 把使用规则注入系统提示: 模型被明确告知 $NAME 的用法, 不用猜占位符
+  // 4. 把使用规则注入系统提示: 模型被明确告知脱敏占位符的用法
   pi.on("before_agent_start", async (event) => {
     if (secrets.size === 0) return;
-    const names = [...secrets.keys()].join(", ");
+    const placeholderList = [...secrets.keys()].map((k) => `[REDACTED: $${k}]`).join(", ");
+    const exampleName = [...secrets.keys()][0];
     event.systemPrompt +=
-      `\n\n[auto-secret-mask] 本会话中以下敏感值已脱敏为 [REDACTED: $NAME] 占位符: ${names}。` +
-      `需要这些值时，直接在工具参数中写 $NAME（如 ${names.split(", ")[0]}），` +
-      `系统会在工具执行前自动替换为真实值。你永远看不到真实值，也不要尝试询问、` +
-      `打印、猜测或把占位符写成别的东西，直接用 $NAME 即可。`;
+      `\n\n[auto-secret-mask] The following sensitive values in this session have been masked: ${placeholderList}.\n` +
+      `When referencing or passing these secrets to tools, you can use either the exact placeholder [REDACTED: $${exampleName}], ` +
+      `or the variable $${exampleName} / \${${exampleName}}. ` +
+      `The system will automatically restore the real values before tool execution. ` +
+      `Do not attempt to inspect, guess, or ask for the original values.`;
   });
 }
