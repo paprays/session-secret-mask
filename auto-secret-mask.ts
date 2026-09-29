@@ -226,11 +226,15 @@ export default function (pi: ExtensionAPI) {
     if (secrets.size === 0) return;
     const placeholderList = [...secrets.keys()].map((k) => `[REDACTED: $${k}]`).join(", ");
     const exampleName = [...secrets.keys()][0];
-    event.systemPrompt +=
-      `\n\n[auto-secret-mask] The following sensitive values in this session have been masked: ${placeholderList}.\n` +
-      `When referencing or passing these secrets to tools, you can use either the exact placeholder [REDACTED: $${exampleName}], ` +
-      `or the variable $${exampleName} / \${${exampleName}}. ` +
-      `The system will automatically restore the real values before tool execution. ` +
-      `Do not attempt to inspect, guess, or ask for the original values.`;
+    // event 是只读的, 必须通过返回值替换 systemPrompt
+    return {
+      systemPrompt:
+        event.systemPrompt +
+        `\n\n[auto-secret-mask] The following sensitive values in this session have been masked: ${placeholderList}.\n` +
+        `When referencing or passing these secrets to tools, you can use either the exact placeholder [REDACTED: $${exampleName}], ` +
+        `or the variable $${exampleName} / \${${exampleName}}. ` +
+        `The system will automatically restore the real values before tool execution. ` +
+        `Do not attempt to inspect, guess, or ask for the original values.`,
+    };
   });
 }
